@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ESP8266 Home IoT - Control Panel</title>
+  <style>
+    :root{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;padding:0}
+    body{background:#0f172a;color:#e6eef8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+    .card{width:100%;max-width:880px;background:linear-gradient(180deg,#071129 0%, #081625 100%);border-radius:12px;padding:20px;box-shadow:0 10px 30px rgba(2,6,23,.6);}
+    h1{margin:0 0 8px;font-size:20px}
+    p.lead{margin:0 0 18px;color:#9fb0d3}
+    .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+    .device{background:rgba(255,255,255,0.02);padding:14px;border-radius:10px;border:1px solid rgba(255,255,255,0.03)}
+    .device h3{margin:0 0 8px;font-size:16px}
+    .btn{display:inline-block;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-weight:600}
+    .btn-toggle{min-width:84px}
+    .on{background:#10b981;color:white}
+    .off{background:#374151;color:white}
+    .status{font-size:13px;color:#a6c0df;margin-top:8px}
+    .fan-control{display:flex;align-items:center;gap:12px}
+    .fan-level{min-width:60px;text-align:center}
+    .footer{margin-top:16px;display:flex;gap:12px;align-items:center;justify-content:space-between}
+    .config{font-size:13px;color:#9fb0d3}
+    .small{font-size:12px;color:#8ea6cd}
+    label{display:block;font-size:13px;margin-bottom:6px}
+    input[type=range]{width:100%}
+    .row{display:flex;gap:12px}
+    .full{grid-column:1/-1}
+    .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.03);font-size:13px}
+    .warning{color:#f59e0b}
+    footer .small{margin-top:12px}
+    @media(max-width:720px){.grid{grid-template-columns:1fr}}
+  </style>
+  <!-- Firebase (compat) SDKs from CDN - replace versions if needed -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+</head>
+<body>
+  <div class="card">
+    <h1>ESP8266 Home IoT — Control Panel</h1>
+    <p class="lead">Control 4 bulbs and a fan (0–3). This panel syncs in real-time with the Firebase Realtime Database used by your ESP8266 sketch.</p>
+
+    <div class="grid">
+      <div class="device">
+        <h3>Bulb 1 <span id="bulb1-pill" class="pill">—</span></h3>
+        <div class="row">
+          <button id="bulb1-on" class="btn btn-toggle on">Turn ON</button>
+          <button id="bulb1-off" class="btn btn-toggle off">Turn OFF</button>
+        </div>
+        <div class="status" id="bulb1-status">Waiting...</div>
+      </div>
+
+      <div class="device">
+        <h3>Bulb 2 <span id="bulb2-pill" class="pill">—</span></h3>
+        <div class="row">
+          <button id="bulb2-on" class="btn btn-toggle on">Turn ON</button>
+          <button id="bulb2-off" class="btn btn-toggle off">Turn OFF</button>
+        </div>
+        <div class="status" id="bulb2-status">Waiting...</div>
+      </div>
+
+      <div class="device">
+        <h3>Bulb 3 <span id="bulb3-pill" class="pill">—</span></h3>
+        <div class="row">
+          <button id="bulb3-on" class="btn btn-toggle on">Turn ON</button>
+          <button id="bulb3-off" class="btn btn-toggle off">Turn OFF</button>
+        </div>
+        <div class="status" id="bulb3-status">Waiting...</div>
+      </div>
+
+      <div class="device">
+        <h3>Bulb 4 <span id="bulb4-pill" class="pill">—</span></h3>
+        <div class="row">
+          <button id="bulb4-on" class="btn btn-toggle on">Turn ON</button>
+          <button id="bulb4-off" class="btn btn-toggle off">Turn OFF</button>
+        </div>
+        <div class="status" id="bulb4-status">Waiting...</div>
+      </div>
+
+      <div class="device full">
+        <h3>Fan <span id="fan-pill" class="pill">—</span></h3>
+        <label for="fanRange">Speed (0 = off, 3 = high)</label>
+        <div class="fan-control">
+          <input id="fanRange" type="range" min="0" max="3" step="1" value="0">
+          <div class="fan-level"><strong id="fan-level-text">0</strong></div>
+          <button id="fan-set" class="btn on">Set</button>
+          <button id="fan-off" class="btn off">OFF</button>
+        </div>
+        <div class="status" id="fan-status">Waiting...</div>
+      </div>
+
+      <div class="device full">
+        <h3>Firebase & Device</h3>
+        <div class="config">
+          <div>Project: <span id="project-name">(from config)</span></div>
+          <div>Connection: <span id="conn-status" class="small">Not connected</span></div>
+          <div id="rules-warning" class="small warning" style="display:none">Make sure your Realtime Database rules allow read/write for anonymous users (for testing).</div>
+        </div>
+        <div style="margin-top:10px;">
+          <label for="apiKey">Firebase API Key</label>
+          <input id="apiKey" style="width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit" placeholder="Paste your API key here">
+          <label for="dbUrl" style="margin-top:8px;display:block">Database URL</label>
+          <input id="dbUrl" style="width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit" placeholder="https://<your-db>.firebaseio.com/">
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <button id="btn-init" class="btn on">Initialize</button>
+            <button id="btn-anon" class="btn" style="background:#2563eb;color:white">Sign in anonymously</button>
+            <button id="btn-reset" class="btn off">Reset</button>
+          </div>
+          <div class="small" style="margin-top:6px">Tip: you can paste the API key & DB URL from the ESP8266 sketch above. For quick testing set RTDB rules to public (only for dev):<br><code>{"rules": {".read": true, ".write": true}}</code></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="footer">
+      <div class="small">Built for your ESP8266 RTDB schema: <code>/bulb1..4 = "ON"/"OFF"</code> and <code>/fan = 0..3</code></div>
+      <div class="small">Want authentication, rooms, or mobile layout? Ask me.</div>
+    </div>
+  </div>
+
+<script>
+// ===== Default config values (from your ESP sketch) =====
+const DEFAULT_API_KEY = 'AIzaSyCKdiZHxSO-zzuPukuov5uzrTixfaWX5aA';
+const DEFAULT_DB_URL = 'https://home-iot-24e19-default-rtdb.firebaseio.com/';
+
+// Element helpers
+const $ = id => document.getElementById(id);
+
+// UI references
+const bulbs = [1,2,3,4].map(n => ({
+  on: $(`bulb${n}-on`), off: $(`bulb${n}-off`), status: $(`bulb${n}-status`), pill: $(`bulb${n}-pill`)
+}));
+const fanRange = $('fanRange');
+const fanLevelText = $('fan-level-text');
+const fanSet = $('fan-set');
+const fanOff = $('fan-off');
+const connStatus = $('conn-status');
+const projectName = $('project-name');
+const apiKeyInput = $('apiKey');
+const dbUrlInput = $('dbUrl');
+const initBtn = $('btn-init');
+const anonBtn = $('btn-anon');
+const resetBtn = $('btn-reset');
+const rulesWarning = $('rules-warning');
+const fanPill = $('fan-pill');
+
+// Put defaults in inputs
+apiKeyInput.value = DEFAULT_API_KEY;
+dbUrlInput.value = DEFAULT_DB_URL;
+
+let firebaseApp = null;
+let database = null;
+let auth = null;
+let listeners = [];
+
+function setConn(text, ok=true){
+  connStatus.textContent = text;
+  connStatus.style.color = ok ? '#9ee7b4' : '#fca5a5';
+}
+
+function safeWrite(path, value){
+  if(!database) return Promise.reject('DB not initialized');
+  return database.ref(path).set(value);
+}
+
+function attachListeners(){
+  // detach old
+  listeners.forEach(fn => fn());
+  listeners = [];
+
+  for(let i=1;i<=4;i++){
+    const p = `/bulb${i}`;
+    const ref = database.ref(p);
+    const off = ref.on('value', snap => {
+      const v = snap.val();
+      const idx = i-1;
+      bulbs[idx].pill.textContent = v===null ? '—' : v;
+      bulbs[idx].status.textContent = 'Current: ' + (v===null ? '—' : v);
+    });
+    listeners.push(() => ref.off('value'));
+  }
+
+  // fan
+  const fanRef = database.ref('/fan');
+  fanRef.on('value', snap => {
+    const v = snap.val();
+    fanLevelText.textContent = (v===null ? '—' : v);
+    fanPill.textContent = (v===null ? '—' : v);
+    fanRange.value = (v===null ? 0 : v);
+    $('fan-status').textContent = 'Current: ' + (v===null ? '—' : v);
+  });
+  listeners.push(() => fanRef.off('value'));
+}
+
+function initFirebase(){
+  const apiKey = apiKeyInput.value.trim();
+  const dbUrl = dbUrlInput.value.trim();
+  if(!apiKey || !dbUrl){ alert('Please provide API key and Database URL'); return; }
+
+  // Initialize
+  try{
+    if(firebaseApp){
+      // cleanup
+      listeners.forEach(fn=>fn());
+      firebaseApp.delete();
+      firebaseApp = null;
+      database = null;
+    }
+  }catch(e){console.warn(e)}
+
+  // Use compat global
+  const cfg = {
+    apiKey: apiKey,
+    databaseURL: dbUrl
+  };
+  firebaseApp = firebase.initializeApp(cfg);
+  database = firebase.database();
+  auth = firebase.auth();
+
+  projectName.textContent = (dbUrl.replace('https://','').replace(/\/$/,'') || '(unknown)');
+  setConn('Connected (init)', true);
+
+  attachListeners();
+  rulesWarning.style.display = 'block';
+}
+
+// Button actions
+for(let i=1;i<=4;i++){
+  const onBtn = $(`bulb${i}-on`);
+  const offBtn = $(`bulb${i}-off`);
+  onBtn.addEventListener('click', ()=>{
+    safeWrite(`/bulb${i}`, 'ON').catch(err=>alert('Write failed: '+err));
+  });
+  offBtn.addEventListener('click', ()=>{
+    safeWrite(`/bulb${i}`, 'OFF').catch(err=>alert('Write failed: '+err));
+  });
+}
+
+fanRange.addEventListener('input', ()=>{ fanLevelText.textContent = fanRange.value; });
+fanSet.addEventListener('click', ()=>{
+  const v = parseInt(fanRange.value);
+  safeWrite('/fan', v).catch(err=>alert('Write failed: '+err));
+});
+fanOff.addEventListener('click', ()=> safeWrite('/fan', 0).catch(err=>alert('Write failed: '+err)));
+
+initBtn.addEventListener('click', initFirebase);
+
+anonBtn.addEventListener('click', ()=>{
+  if(!auth) return alert('Initialize first');
+  auth.signInAnonymously().then(()=>{
+    setConn('Signed in anonymously', true);
+  }).catch(err=>{ setConn('Sign-in failed: '+err.message, false); });
+});
+
+resetBtn.addEventListener('click', ()=>{
+  if(!confirm('Reset local app state?')) return;
+  apiKeyInput.value = DEFAULT_API_KEY;
+  dbUrlInput.value = DEFAULT_DB_URL;
+  projectName.textContent = '(from config)';
+  setConn('Not connected', false);
+  listeners.forEach(fn=>fn()); listeners = [];
+});
+
+// Auto-init with defaults (but do not auto-auth)
+initFirebase();
+
+</script>
+</body>
+</html>
